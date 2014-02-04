@@ -18,7 +18,18 @@ else:
 user_agent = "Mozilla/5.0"
 url_opener = build_opener(HTTPSHandler)
 url_opener.addheaders = [("User-Agent", user_agent)]
-uopen = url_opener.open
+
+def uopen(url, retries=3, timeout=7):
+    data = None
+    while retries >= 0:
+        try:
+            data = url_opener.open(url, timeout).read().decode("utf8")
+        except HTTPError:
+            time.sleep(1)
+            retries -= 1
+        else:
+            break
+    return data
 
 
 class Result(object):
@@ -35,23 +46,13 @@ class Result(object):
 
 
 class Search(object):
-    retry = 3
-
     def __init__(self):
         self.results = []
         self.page = 0
         self.more_results = True
 
     def search(self, query):
-        lives = self.retry
-        while lives >= 0:
-            try:
-                data = uopen(self.search_url % query, timeout=7).read().decode("utf8")
-            except HTTPError:
-                time.sleep(1)
-                lives -= 1
-            else:
-                break
+        data = uopen(self.search_url % query)
         self.parse_results(data)
         self.page = query["page"]
 
@@ -133,22 +134,7 @@ class PleerSearch(Search, HTMLParser):
 
     def resolve_url(self, result):
         fetch_url = self.stream_url % result.link
-
-        print("Fetching: "+fetch_url)
-
-        lives = self.retry
-        while lives >= 0:
-            try:
-                jdata = uopen(fetch_url, timeout=7).read().decode("utf8")
-            except HTTPError:
-                time.sleep(1)
-                lives -= 1
-            else:
-                break
-
-        if lives < 0:
-            return None
-
+        jdata = uopen(fetch_url)
         jobj = json.loads(jdata)
         if "track_link" in jobj:
             return jobj["track_link"]
