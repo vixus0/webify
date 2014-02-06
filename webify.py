@@ -23,7 +23,7 @@ def uopen(url, retries=3, timeout=7):
     data = None
     while retries >= 0:
         try:
-            data = url_opener.open(url, timeout).read().decode("utf8")
+            data = url_opener.open(url, timeout=timeout).read().decode("utf8")
         except HTTPError:
             time.sleep(1)
             retries -= 1

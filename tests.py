@@ -1,11 +1,8 @@
-#!/usr/bin/env python
-
 from __future__ import print_function
-
 from webify import Search
 
 def test_searches(query):
-    for s in Search.__subclasses__():
+    for cls in Search.__subclasses__():
 
         test_search = {
             "page":1, 
@@ -13,6 +10,8 @@ def test_searches(query):
             "start_res":1,
             "terms":query
             }
+        
+        s = cls()
 
         print(s)
         s.search(test_search)
@@ -21,5 +20,4 @@ def test_searches(query):
 
         print(s.results[0].resolve_url())
         print("\n\n\n")
-
 
