@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 from __future__ import print_function
 
@@ -6,6 +6,8 @@ import json
 import sys
 import pickle
 import time
+
+from collections import deque
 
 if sys.version_info[0] > 2:
     from urllib.request import build_opener, HTTPSHandler
@@ -140,18 +142,53 @@ class PleerSearch(Search, HTMLParser):
             return jobj["track_link"]
         else:
             return None
-        
+
+
+class Playlist(object):
+
+    def __init__(self, n, queue=None):
+        self.name = n
+        self.queue = deque(queue)
+
+    def add(self, q, before=False):
+        if before:
+            self.queue.extendleft(q.reverse())
+        else:
+            self.queue.extend(q)
+
+    def save(self, fh):
+        pickle.dump(self, fh, protocol=2)
+
+    @classmethod
+    def load(cls, fh):
+        plist = pickle.load(fh)
+        return cls(plist.name, plist.queue)
+
 
 class Player(object):
     
     def __init__(self):
-        self.playlist = []
-
+        self.__queue = Playlist("Default")
+        self.__state = 0
+        self.__flags = {"shuffle":False, "repeat":False}
         self.__get_backends()
+        self.__player = ["mpv", "--really-quiet", "--no-lirc", "--no-cache"]
         
     def __get_backends(self):
         s = import_module("search")
         sbase = getattr(s, "Search")
         self.backends = sbase.__subclasses__()
 
-    
+    def queue_playlist(self, pf, autoplay=False):
+        self.__queue = Playlist.load(pf)
+        self.__state = 1 if autoplay else 0
+
+    @property
+    def state(self):
+        state_map = {\
+                0 : "Stopped"
+                1 : "Playing"
+                }
+        return (self.__state, state_map[self.__state])
+
+   
