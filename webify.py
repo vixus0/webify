@@ -142,22 +142,16 @@ class PleerSearch(Search, HTMLParser):
             return None
         
 
-def test_searches(query):
-    for cls in [DailymotionSearch, YoutubeSearch, PleerSearch]:
+class Player(object):
+    
+    def __init__(self):
+        self.playlist = []
 
-        test_search = {
-            "page":1, 
-            "max_res":5,
-            "start_res":1,
-            "terms":query
-            }
+        self.__get_backends()
+        
+    def __get_backends(self):
+        s = import_module("search")
+        sbase = getattr(s, "Search")
+        self.backends = sbase.__subclasses__()
 
-        s = cls()
-
-        print(s)
-        s.search(test_search)
-        print(s.results)
-        print("\n\n")
-
-        print(s.results[0].resolve_url())
-        print("\n\n\n")
+    
