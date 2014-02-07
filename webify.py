@@ -7,6 +7,7 @@ import sys
 import pickle
 import time
 
+from subprocess import call as sub_call
 from collections import deque
 
 if sys.version_info[0] > 2:
@@ -148,13 +149,16 @@ class Playlist(object):
 
     def __init__(self, n, queue=None):
         self.name = n
-        self.queue = deque(queue)
+        self.queue = queue
 
-    def add(self, q, before=False):
+    def add(self, item, before=False):
         if before:
-            self.queue.extendleft(q.reverse())
+            self.queue.insert(0, item)
         else:
-            self.queue.extend(q)
+            self.queue.append(item)
+
+    def remove(self, idx):
+        del self.queue[idx]
 
     def save(self, fh):
         pickle.dump(self, fh, protocol=2)
@@ -165,30 +169,59 @@ class Playlist(object):
         return cls(plist.name, plist.queue)
 
 
+class MpvBackend(object):
+
+    def __init__(self):
+        self.__cmd  = "mpv"
+        self.__args = ["--really-quiet", "--no-lirc", "--no-cache"]
+        self.__vid  = True
+
+    def play_url(self, url):
+        cmd = [__cmd] + __args
+        if not __vid:
+            cmd += ["--no-video"]
+        cmd += url
+        sub_call(cmd) 
+
+    def toggle_video(self):
+        self.__vid = not self.__vid
+
+
 class Player(object):
     
-    def __init__(self):
-        self.__queue = Playlist("Default")
+    def __init__(self, backend=None):
+        self.__pl = Playlist("Default")
         self.__state = 0
         self.__flags = {"shuffle":False, "repeat":False}
-        self.__get_backends()
-        self.__player = ["mpv", "--really-quiet", "--no-lirc", "--no-cache"]
+        self.__back  = backend or MpvBackend()
+        self.__get_searches()
+        self.__track = -1
         
-    def __get_backends(self):
+    def __get_searches(self):
         s = import_module("search")
         sbase = getattr(s, "Search")
-        self.backends = sbase.__subclasses__()
+        self.searches = sbase.__subclasses__()
 
     def queue_playlist(self, pf, autoplay=False):
-        self.__queue = Playlist.load(pf)
-        self.__state = 1 if autoplay else 0
+        self.__pl = Playlist.load(pf)
+        if autoplay:
+            self.play()
+
+    def play(self):
+        self.__state = 1
+        for i,item in enumerate(self.__pl.queue):
+            url = item.resolve_url()
+            self.__track = i
+            self.__back.play_url(url)
 
     @property
     def state(self):
         state_map = {\
-                0 : "Stopped"
-                1 : "Playing"
+                0 : "Stopped",
+                1 : "Playing",
                 }
         return (self.__state, state_map[self.__state])
 
-   
+    @property
+    def playlist(self):
+        return self.__pl
