@@ -12,11 +12,13 @@ from collections import deque
 from importlib import import_module
 
 if sys.version_info[0] > 2:
-    from urllib.request import build_opener, HTTPSHandler
+    from urllib.request import build_opener HTTPSHandler
     from urllib.error import HTTPError, URLError
+    from urllib.parse import urlencode
     from html.parser import HTMLParser, HTMLParseError
 else:
-    from urllib2 import build_opener, HTTPSHandler, HTTPError, URLError
+    from urllib import urlencode
+    from urllib2 import build_opener, urlencode, HTTPSHandler, HTTPError, URLError
     from HTMLParser import HTMLParser, HTMLParseError
 
 user_agent = "Mozilla/5.0"
@@ -46,7 +48,7 @@ class Result(object):
         return self.source.resolve_url(self)
 
     def __repr__(self):
-        return "Result( %(title)s, %(link)s, %(source)s )" % self.__dict__
+        return "Result( {title}, {link}, {source} )".format(self.__dict__)
 
 
 class Search(object):
@@ -54,15 +56,25 @@ class Search(object):
         self.results = []
         self.more_results = True
         self.query = None
+        self.page = 1
 
     def __chpage(self, incr):
-        self.query["page"] += incr
+        self.page += incr
 
     def search(self, query=None):
-        if self.query == None and query == None:
+        if query:
+            q = query.copy()
+        elif self.query:
+            q = self.query.copy()
+        else:
             return
-        q = query or self.query
-        data = uopen(self.search_url % q)
+        q["page"] = self.page
+        url = self.search_url.format(**q)
+        print("{} *** PAGE: {} {}".format(self.slug, q["page"], url))
+        data = uopen(url)
+        print(data)
+        if not data:
+            return
         self.parse_results(data)
         self.query = q
 
@@ -73,13 +85,13 @@ class Search(object):
             if not self.more_results:
                 return
         else:
-            if self.query["page"] == 1:
+            if self.page == 1:
                 return
         self.__chpage(incr)
         self.search()
 
     def resolve_url(self, result):
-        return self.stream_url % result.link
+        return self.stream_url.format(result)
             
     def __repr__(self):
         return self.slug
@@ -87,8 +99,13 @@ class Search(object):
 
 class DailymotionSearch(Search):
     slug = "dm"
-    search_url = "https://api.dailymotion.com/videos?sort=relevance&page=%(page)d&limit=%(max_res)d&search=%(terms)s"
-    stream_url = "http://www.dailymotion.com/video/%s"
+    name = "Dailymotion"
+    search_url = "https://api.dailymotion.com/videos?sort=relevance&page={page}&limit={max_res}&search={terms}"
+    stream_url = "http://www.dailymotion.com/video/{0.link}"
+    query_map = {
+            "limit":"max_res"
+            "search":"terms"
+            }
 
     def parse_results(self, data):
         jobj = json.loads(data)
@@ -104,8 +121,9 @@ class DailymotionSearch(Search):
 
 class YoutubeSearch(Search):
     slug = "yt"
-    search_url = "http://gdata.youtube.com/feeds/api/videos?v=2&max-results=%(max_res)d&start-index=%(start_res)d&alt=json&q=%(terms)s"
-    stream_url = "http://www.youtube.com/v/%s"
+    name = "YouTube"
+    search_url = "http://gdata.youtube.com/feeds/api/videos?v=2&max-results={max_res}&start-index={start_res}&alt=json&q={terms}"
+    stream_url = "http://www.youtube.com/v/{0.link}"
 
     def parse_results(self, data):
         jobj = json.loads(data)
@@ -123,16 +141,16 @@ class YoutubeSearch(Search):
         self.more_results = start_index < total_res - per_page
         
     def __chpage(self, incr):
-        self.query["page"] += incr
-        page = self.query["page"]
+        self.page += incr
         per_page = self.query["max_res"]
-        self.query["start_res"] = 1 + (per_page * (page-1))
+        self.query["start_res"] = 1 + (per_page * (self.page-1))
 
 
 class PleerSearch(Search, HTMLParser):
-    slug = "pleer"
-    search_url = "http://pleer.com/search?q=%(terms)s&target=tracks&page=%(page)d"
-    stream_url = "http://pleer.com/site_api/files/get_url?action=download&id=%s"
+    slug = "pl"
+    name = "Pleer"
+    search_url = "http://pleer.com/search?q={terms}&target=tracks&page={page}"
+    stream_url = "http://pleer.com/site_api/files/get_url?action=download&id={0.link}"
 
     def __init__(self):
         self.li = [] 
@@ -161,7 +179,7 @@ class PleerSearch(Search, HTMLParser):
         self.li.append(adict)
 
     def resolve_url(self, result):
-        fetch_url = self.stream_url % result.link
+        fetch_url = self.stream_url.format(result)
         jdata = uopen(fetch_url)
         jobj = json.loads(jdata)
         if "track_link" in jobj:
@@ -238,8 +256,11 @@ class Player(object):
             self.__back.play_url(url)
 
     def search(self, text, nres=5, engines=None):
+        res = []
+
         if text == "":
-            return [s.results for s in self.__searches]
+            for s in self.__searches:
+                res.extend(s.results)
 
         query = {
             "page":1,
@@ -247,14 +268,19 @@ class Player(object):
             "start_res":1,
             "terms":text
             }
+
         for s in self.__searches:
             s.search(query)
-        return [s.results for s in self.__searches]
+            res.extend(s.results)
+
+        return res
 
     def search_change_page(self, incr=1):
+        res = []
         for s in self.__searches:
             s.change_page(incr)
-        return [s.results for s in self.__searches]
+            res.extend(s.results)
+        return res
 
     @property
     def state(self):
