@@ -9,6 +9,7 @@ import time
 
 from subprocess import call as sub_call
 from collections import deque
+from importlib import import_module
 
 if sys.version_info[0] > 2:
     from urllib.request import build_opener, HTTPSHandler
@@ -51,13 +52,31 @@ class Result(object):
 class Search(object):
     def __init__(self):
         self.results = []
-        self.page = 0
         self.more_results = True
+        self.query = None
 
-    def search(self, query):
-        data = uopen(self.search_url % query)
+    def __chpage(self, incr):
+        self.query["page"] += incr
+
+    def search(self, query=None):
+        if self.query == None and query == None:
+            return
+        q = query or self.query
+        data = uopen(self.search_url % q)
         self.parse_results(data)
-        self.page = query["page"]
+        self.query = q
+
+    def change_page(self, incr):
+        if self.query == None or incr == 0:
+            return
+        elif incr > 0:
+            if not self.more_results:
+                return
+        else:
+            if self.query["page"] == 1:
+                return
+        self.__chpage(incr)
+        self.search()
 
     def resolve_url(self, result):
         return self.stream_url % result.link
@@ -102,6 +121,12 @@ class YoutubeSearch(Search):
         per_page    = jobj["feed"]["openSearch$itemsPerPage"]["$t"]
 
         self.more_results = start_index < total_res - per_page
+        
+    def __chpage(self, incr):
+        self.query["page"] += incr
+        page = self.query["page"]
+        per_page = self.query["max_res"]
+        self.query["start_res"] = 1 + (per_page * (page-1))
 
 
 class PleerSearch(Search, HTMLParser):
@@ -198,9 +223,7 @@ class Player(object):
         self.__track = -1
         
     def __get_searches(self):
-        s = import_module("search")
-        sbase = getattr(s, "Search")
-        self.searches = sbase.__subclasses__()
+        self.__searches = [cls() for cls in Search.__subclasses__()]
 
     def queue_playlist(self, pf, autoplay=False):
         self.__pl = Playlist.load(pf)
@@ -214,9 +237,28 @@ class Player(object):
             self.__track = i
             self.__back.play_url(url)
 
+    def search(self, text, nres=5, engines=None):
+        if text == "":
+            return [s.results for s in self.__searches]
+
+        query = {
+            "page":1,
+            "max_res":nres,
+            "start_res":1,
+            "terms":text
+            }
+        for s in self.__searches:
+            s.search(query)
+        return [s.results for s in self.__searches]
+
+    def search_change_page(self, incr=1):
+        for s in self.__searches:
+            s.change_page(incr)
+        return [s.results for s in self.__searches]
+
     @property
     def state(self):
-        state_map = {\
+        state_map = {
                 0 : "Stopped",
                 1 : "Playing",
                 }
