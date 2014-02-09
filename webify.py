@@ -12,7 +12,7 @@ from collections import deque
 from importlib import import_module
 
 if sys.version_info[0] > 2:
-    from urllib.request import build_opener HTTPSHandler
+    from urllib.request import build_opener, HTTPSHandler
     from urllib.error import HTTPError, URLError
     from urllib.parse import urlencode
     from html.parser import HTMLParser, HTMLParseError
@@ -61,22 +61,31 @@ class Search(object):
     def __chpage(self, incr):
         self.page += incr
 
+    def __map_query(self):
+        d = {}
+        for k,v in self.query_map.items():
+            if v in self.query.keys():
+                d[k] = self.query[v]
+            else:
+                d[k]=v
+        return d
+
     def search(self, query=None):
         if query:
             q = query.copy()
+            self.query = q
         elif self.query:
-            q = self.query.copy()
+            q = self.query
         else:
             return
         q["page"] = self.page
-        url = self.search_url.format(**q)
-        print("{} *** PAGE: {} {}".format(self.slug, q["page"], url))
+        enc = urlencode(self.__map_query())
+        url = "{}?{}".format(self.search_url, enc)
+        #print("{} *** PAGE: {} {}".format(self.slug, q["page"], url))
         data = uopen(url)
-        print(data)
         if not data:
             return
         self.parse_results(data)
-        self.query = q
 
     def change_page(self, incr):
         if self.query == None or incr == 0:
@@ -100,11 +109,13 @@ class Search(object):
 class DailymotionSearch(Search):
     slug = "dm"
     name = "Dailymotion"
-    search_url = "https://api.dailymotion.com/videos?sort=relevance&page={page}&limit={max_res}&search={terms}"
+    search_url = "https://api.dailymotion.com/videos"
     stream_url = "http://www.dailymotion.com/video/{0.link}"
     query_map = {
-            "limit":"max_res"
-            "search":"terms"
+            "page":"page",
+            "sort":"relevance",
+            "limit":"max_res",
+            "search":"terms",
             }
 
     def parse_results(self, data):
@@ -122,8 +133,15 @@ class DailymotionSearch(Search):
 class YoutubeSearch(Search):
     slug = "yt"
     name = "YouTube"
-    search_url = "http://gdata.youtube.com/feeds/api/videos?v=2&max-results={max_res}&start-index={start_res}&alt=json&q={terms}"
+    search_url = "http://gdata.youtube.com/feeds/api/videos"
     stream_url = "http://www.youtube.com/v/{0.link}"
+    query_map = {
+            "v":2,
+            "alt":"json",
+            "max-results":"max_res",
+            "start-index":"start_res",
+            "q":"terms",
+            }
 
     def parse_results(self, data):
         jobj = json.loads(data)
@@ -149,8 +167,13 @@ class YoutubeSearch(Search):
 class PleerSearch(Search, HTMLParser):
     slug = "pl"
     name = "Pleer"
-    search_url = "http://pleer.com/search?q={terms}&target=tracks&page={page}"
+    search_url = "http://pleer.com/search"
     stream_url = "http://pleer.com/site_api/files/get_url?action=download&id={0.link}"
+    query_map = {
+            "page":"page",
+            "target":"tracks",
+            "q":"terms",
+            }
 
     def __init__(self):
         self.li = [] 
